@@ -103,6 +103,8 @@ class TestCirr:
                     sims_q2t[pairid2index[pair_id], tarid2index[que_id]] = -100
             sims_q2t = sims_q2t.cpu().numpy()
 
+            print(eval_recall(sims_q2t))
+            
             total_time = time.time() - start_time
             total_time_str = str(datetime.timedelta(seconds=int(total_time)))
             print("Evaluation time {}".format(total_time_str))
@@ -144,3 +146,37 @@ class TestCirr:
             print(f"Recalls saved in {Path.cwd()} as recalls_cirr.json")
 
         fabric.barrier()
+
+
+@torch.no_grad()
+def eval_recall(scores_q2t):
+    # Query->Target
+    ranks = np.zeros(scores_q2t.shape[0])
+
+    for index, score in enumerate(scores_q2t):
+        inds = np.argsort(score)[::-1]
+        match_index = np.where(inds == index)[0]
+
+        if match_index.size > 0:
+            ranks[index] = match_index[0]
+        else:
+            ranks[index] = len(score)  # Or some other default value indicating no match
+
+    # Compute metrics
+    tr1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)  # type: ignore
+    tr5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+    tr10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    tr50 = 100.0 * len(np.where(ranks < 50)[0]) / len(ranks)
+
+    tr_mean3 = (tr1 + tr5 + tr10) / 3
+    tr_mean4 = (tr1 + tr5 + tr10 + tr50) / 4
+
+    eval_result = {
+        "R1": round(tr1, 2),
+        "R5": round(tr5, 2),
+        "R10": round(tr10, 2),
+        "R50": round(tr50, 2),
+        "meanR3": round(tr_mean3, 2),
+        "meanR4": round(tr_mean4, 2),
+    }
+    return eval_result
