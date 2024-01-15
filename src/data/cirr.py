@@ -1,15 +1,163 @@
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import torch
 from lightning import LightningDataModule
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from src.data.transforms import transform_test, transform_train
 from src.data.utils import id2int, pre_caption
 
 Image.MAX_IMAGE_PIXELS = None  # Disable DecompressionBombWarning
+import numpy as np
+
+import numpy as np
+from torch.utils.data import Sampler
+
+import numpy as np
+from torch.utils.data.sampler import Sampler
+
+
+# own function
+class CustomSampler_exclude(Sampler):
+    def __init__(self, data_source, batch_size):
+        self.data_source = data_source
+        self.batch_size = batch_size
+        self.batches = self._create_batches()
+
+    def _create_batches(self):
+        member_ids = list(self.data_source.members2pairid.keys())
+        member_indices = {
+            member_id: self.data_source.members2pairid[member_id]
+            for member_id in member_ids
+        }
+
+        for indices in member_indices.values():
+            np.random.shuffle(indices)
+
+        batches = []
+        while any(member_indices.values()):
+            np.random.shuffle(member_ids)
+            current_batch = []
+            for member_id in member_ids:
+                if member_indices[member_id]:
+                    current_batch.append(member_indices[member_id].pop())
+                if len(current_batch) >= self.batch_size:
+                    break
+            if current_batch:
+                batches.append(current_batch)
+
+        np.random.shuffle(batches)
+        return batches
+
+    def __iter__(self):
+        for batch in self.batches:
+            for idx in batch:
+                yield idx
+
+    def __len__(self):
+        return sum(len(batch) for batch in self.batches)
+
+
+# own function
+class CustomSampler_include(Sampler):
+    def __init__(self, data_source, batch_size):
+        self.data_source = data_source
+        self.batch_size = batch_size
+        self.batches = self._create_batches()
+
+    def _create_batches(self):
+        member_ids = list(self.data_source.members2pairid.keys())
+        np.random.shuffle(member_ids)
+
+        batches = []
+        current_batch = []
+        for member_id in member_ids:
+            group_indices = self.data_source.members2pairid[member_id]
+
+            np.random.shuffle(group_indices)
+
+            current_batch.extend(group_indices)
+            if len(current_batch) >= self.batch_size:
+                batches.append(current_batch)
+                current_batch = []
+
+        np.random.shuffle(batches)
+        return batches
+
+    def __iter__(self):
+        a = []
+        for batch in self.batches:
+            for idx in batch:
+                yield idx
+
+    def __len__(self):
+        return sum(len(batch) for batch in self.batches)
+
+
+import numpy as np
+from torch.utils.data import Sampler
+
+
+class CustomMixedSampler(Sampler):
+    def __init__(self, data_source, batch_size, alpha):
+        self.data_source = data_source
+        self.batch_size = batch_size
+        self.alpha = alpha
+        self.batches = self._create_batches()
+
+    def _create_batches(self):
+        member_ids = list(self.data_source.members2pairid.keys())
+        member_indices = {
+            member_id: self.data_source.members2pairid[member_id][:]
+            for member_id in member_ids
+        }
+
+        batches = []
+        while any(member_indices.values()):
+            if np.random.binomial(1, self.alpha):
+                # Exclude approach
+                np.random.shuffle(member_ids)
+                current_batch = []
+                for member_id in member_ids:
+                    if member_indices[member_id]:
+                        current_batch.append(member_indices[member_id].pop(0))
+                    if len(current_batch) >= self.batch_size:
+                        break
+                if current_batch:
+                    batches.append(current_batch)
+
+            else:
+                # Include approach
+                np.random.shuffle(member_ids)
+                current_batch = []
+                members_processed = []
+                for member_id in member_ids:
+                    if member_indices[member_id]:
+                        group_indices = member_indices[member_id]
+                        np.random.shuffle(group_indices)
+                        current_batch.extend(group_indices)
+                        members_processed.append(member_id)
+                        if len(current_batch) >= self.batch_size:
+                            break
+                for member_id in members_processed:
+                    member_indices[member_id] = []
+                if current_batch:
+                    batches.append(current_batch)
+
+        np.random.shuffle(batches)
+        return batches
+
+    def __iter__(self):
+        a = []
+        for batch in self.batches:
+            for idx in batch:
+                yield idx
+
+    def __len__(self):
+        return sum(len(batch) for batch in self.batches)
 
 
 class CIRRDataModule(LightningDataModule):
@@ -41,6 +189,24 @@ class CIRRDataModule(LightningDataModule):
             emb_dir=emb_dirs["train"],
             split="train",
         )
+
+        # own code
+        self._type = "mix"
+
+        if self._type == "exclude":
+            self.sampler_data_train = CustomSampler_exclude(
+                self.data_train, self.batch_size
+            )
+        elif self._type == "include":
+            self.sampler_data_train = CustomSampler_include(
+                self.data_train, self.batch_size
+            )
+        elif self._type == "mix":
+            self.sampler_data_train = CustomMixedSampler(
+                self.data_train,
+                self.batch_size,
+                alpha=0.6,  # TODO hard coded to be added to yaml
+            )
         self.data_val = CIRRDataset(
             transform=self.transform_test,
             annotation=annotation["val"],
@@ -55,14 +221,25 @@ class CIRRDataModule(LightningDataModule):
         pass
 
     def train_dataloader(self):
-        return DataLoader(
-            dataset=self.data_train,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            shuffle=True,
-            drop_last=True,
-        )
+        if self._type in ["exclude", "include", "mix"]:
+            return DataLoader(
+                dataset=self.data_train,
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                # shuffle=True,
+                drop_last=True,
+                sampler=self.sampler_data_train,
+            )
+        else:
+            return DataLoader(
+                dataset=self.data_train,
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                shuffle=True,
+                drop_last=True,
+            )
 
     def val_dataloader(self):
         return DataLoader(
@@ -149,12 +326,23 @@ class CIRRDataset(Dataset):
         self.int2id = {
             id2int(ann["reference"]): ann["reference"] for ann in self.annotation
         }
+
         ids = {ann["reference"] for ann in self.annotation}
         assert len(self.int2id) == len(ids), "Reference ids are not unique"
 
         self.pairid2members = {
             ann["pairid"]: id2int(ann["img_set"]["members"]) for ann in self.annotation
         }
+
+        # own code
+        self.pairid2int = {ann["pairid"]: i for i, ann in enumerate(self.annotation)}
+        self.members2pairid = defaultdict(list)
+
+        for pairid, members in self.pairid2members.items():
+            for member in members:
+                self.members2pairid[member].append(self.pairid2int[pairid])
+                break
+
         if split != "test":
             self.pairid2tar = {
                 ann["pairid"]: id2int(ann["target_hard"]) for ann in self.annotation
