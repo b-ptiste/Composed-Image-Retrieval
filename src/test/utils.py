@@ -18,7 +18,9 @@ def evaluate(model, data_loader, fabric):
     query_feats = []
     captions = []
     pair_ids = []
-
+    # text_embds_inside
+    # text_embds_outside
+    _training_type = "text_embds_outside"
     for ref_img, tar_feat, caption, pair_id, *_ in data_loader:
         pair_ids.extend(pair_id.cpu().numpy().tolist())
         captions.extend(caption)
@@ -39,18 +41,47 @@ def evaluate(model, data_loader, fabric):
         # Shift encoder
         encoder_input_ids = text.input_ids.clone()
         encoder_input_ids[:, 0] = model.tokenizer.enc_token_id
-        query_embs = model.text_encoder(
+        query_embs, text_feat = model.text_encoder(
             encoder_input_ids,
             attention_mask=text.attention_mask,
             encoder_hidden_states=ref_img_embs,
             encoder_attention_mask=ref_img_atts,
             return_dict=True,
         )
+
+        if _training_type == "text_embds_outside":
+            encoder_input_ids = text.input_ids.clone()
+            text_feat = model.text_encoder_only(
+                encoder_input_ids,
+                attention_mask=text.attention_mask,
+                return_dict=True,
+                mode="text",
+            )
+
+            text_feat = text_feat.last_hidden_state[:, 0, :]
+            text_feat = F.normalize(model.text_proj(text_feat), dim=-1)
+        if _training_type == "text_embds_inside":
+            text_feat = F.normalize(model.text_proj(text_feat.mean(dim=1)), dim=-1)
+
         query_feat = query_embs.last_hidden_state[:, 0, :]
         query_feat = F.normalize(model.text_proj(query_feat), dim=-1)
-        query_feats.append(query_feat.cpu())
 
-        # Encode the target image
+        img_feat_2d = F.normalize(model.vision_proj(ref_img_embs.mean(dim=1)), dim=-1)
+        concatenated_feats = torch.cat(
+            (query_feat.unsqueeze(1), img_feat_2d.unsqueeze(1), text_feat.unsqueeze(1)),
+            dim=1,
+        )
+        combined_query_feat = concatenated_feats.view(concatenated_feats.size(0), -1)
+
+        # Get weights from the MLP
+        weights = model.mlp(combined_query_feat)
+        query_feat = (
+            weights[:, 0].unsqueeze(1) * query_feat
+            + weights[:, 1].unsqueeze(1) * img_feat_2d
+            + weights[:, 2].unsqueeze(1) * text_feat
+        )
+
+        query_feats.append(query_feat.cpu())
         tar_img_feats.append(tar_feat.cpu())
 
     query_feats = torch.cat(query_feats, dim=0)

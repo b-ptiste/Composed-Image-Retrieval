@@ -13,6 +13,9 @@ from src.tools.files import json_dump
 
 class TestCirr:
     def __init__(self):
+        # text_embds_inside
+        # text_embds_outside
+        self.training_type = "text_embds_outside"
         pass
 
     @staticmethod
@@ -25,6 +28,13 @@ class TestCirr:
 
         tar_img_feats = []
         query_feats = []
+
+        # embd_feat
+        query_feats_before = []
+        img_feat_2ds = []
+        text_feats = []
+
+        weights_feats = []
         pair_ids = []
         for ref_img, tar_feat, caption, pair_id, *_ in data_loader:
             pair_ids.extend(pair_id.cpu().numpy().tolist())
@@ -47,35 +57,97 @@ class TestCirr:
             # Shift encoder
             encoder_input_ids = text.input_ids.clone()
             encoder_input_ids[:, 0] = model.tokenizer.enc_token_id
-            query_embs = model.text_encoder(
+            query_embs, text_feat = model.text_encoder(
                 encoder_input_ids,
                 attention_mask=text.attention_mask,
                 encoder_hidden_states=ref_img_embs,
                 encoder_attention_mask=ref_img_atts,
                 return_dict=True,
             )
+
+            if self.training_type == "text_embds_outside":
+                encoder_input_ids = text.input_ids.clone()
+                text_feat = model.text_encoder_only(
+                    encoder_input_ids,
+                    attention_mask=text.attention_mask,
+                    return_dict=True,
+                    mode="text",
+                )
+
+                text_feat = text_feat.last_hidden_state[:, 0, :]
+                text_feat = F.normalize(model.text_proj(text_feat), dim=-1)
+            if self.training_type == "text_embds_inside":
+                text_feat = F.normalize(model.text_proj(text_feat.mean(dim=1)), dim=-1)
+            # print(text_embs.shape)
+
             query_feat = query_embs.last_hidden_state[:, 0, :]
             query_feat = F.normalize(model.text_proj(query_feat), dim=-1)
-            query_feats.append(query_feat.cpu())
+
+            img_feat_2d = F.normalize(
+                model.vision_proj(ref_img_embs.mean(dim=1)), dim=-1
+            )
+            # print(img_feat_2d.shape)
+            # avg_feat = (query_feat + img_feat + text_feat) / 3
+            concatenated_feats = torch.cat(
+                (
+                    query_feat.unsqueeze(1),
+                    img_feat_2d.unsqueeze(1),
+                    text_feat.unsqueeze(1),
+                ),
+                dim=1,
+            )
+
+            combined_query_feat = concatenated_feats.view(
+                concatenated_feats.size(0), -1
+            )
+            # print(query_feat.shape)
+            # Get weights from the MLP
+
+            weights = model.mlp(combined_query_feat)
+            query_feat_multi = (
+                weights[:, 0].unsqueeze(1) * query_feat
+                + weights[:, 1].unsqueeze(1) * img_feat_2d
+                + weights[:, 2].unsqueeze(1) * text_feat
+            )
+            weights_feats.append(weights.detach().cpu())
+            query_feats.append(query_feat_multi.cpu())
+            query_feats_before.append(query_feat.cpu())
+            img_feat_2ds.append(img_feat_2d.cpu())
+            text_feats.append(text_feat.cpu())
 
             # Encode the target image
             tar_img_feats.append(tar_feat.cpu())
 
         pair_ids = torch.tensor(pair_ids, dtype=torch.long)
         query_feats = torch.cat(query_feats, dim=0)
+        weights_feats = torch.cat(weights_feats, dim=0)
         tar_img_feats = torch.cat(tar_img_feats, dim=0)
+        query_feats_before = torch.cat(query_feats_before, dim=0)
+        img_feat_2ds = torch.cat(img_feat_2ds, dim=0)
+        text_feats = torch.cat(text_feats, dim=0)
+
+        np.save(".Composed-Image-Retrieval/outputs/weight.npy", weights_feats.numpy())
 
         if fabric.world_size > 1:
             # Gather tensors from every process
             query_feats = fabric.all_gather(query_feats)
             tar_img_feats = fabric.all_gather(tar_img_feats)
             pair_ids = fabric.all_gather(pair_ids)
+            query_feats_before = fabric.all_gather(query_feats_before)
+            img_feat_2ds = fabric.all_gather(img_feat_2ds)
+            text_feats = fabric.all_gather(text_feats)
 
             query_feats = einops.rearrange(query_feats, "d b e -> (d b) e")
             tar_img_feats = einops.rearrange(tar_img_feats, "d b e -> (d b) e")
+            query_feats_before = einops.rearrange(
+                query_feats_before, "d b e -> (d b) e"
+            )
+            img_feat_2ds = einops.rearrange(img_feat_2ds, "d b e -> (d b) e")
+            text_feats = einops.rearrange(text_feats, "d b e -> (d b) e")
             pair_ids = einops.rearrange(pair_ids, "d b -> (d b)")
 
         if fabric.global_rank == 0:
+            pair_ids_np = pair_ids.cpu().numpy()
             pair_ids = pair_ids.cpu().numpy().tolist()
 
             assert len(query_feats) == len(pair_ids)
@@ -89,7 +161,26 @@ class TestCirr:
 
             tar_feats = torch.stack(list(id2emb.values()), dim=0)
             sims_q2t = query_feats @ tar_feats.T
-
+            sims_query_feats_before = query_feats_before @ tar_feats.T
+            sims_img_feat_2ds = img_feat_2ds @ tar_feats.T
+            sims_text_feats = text_feats @ tar_feats.T
+            np.save(".Composed-Image-Retrieval/outputs/pair_ids_np.npy", pair_ids_np)
+            np.save(
+                ".Composed-Image-Retrieval/outputs/tar_feats.npy", tar_feats.numpy()
+            )
+            np.save(".Composed-Image-Retrieval/outputs/sims_q2t.npy", sims_q2t.numpy())
+            np.save(
+                ".Composed-Image-Retrieval/outputs/sims_query_feats_before.npy",
+                sims_query_feats_before.numpy(),
+            )
+            np.save(
+                ".Composed-Image-Retrieval/outputs/sims_img_feat_2ds.npy",
+                sims_img_feat_2ds.numpy(),
+            )
+            np.save(
+                ".Composed-Image-Retrieval/outputs/sims_text_feats.npy",
+                sims_text_feats.numpy(),
+            )
             # Create a mapping from pair_id to row index for faster lookup
             pairid2index = {pair_id: i for i, pair_id in enumerate(pair_ids)}
 
@@ -103,7 +194,7 @@ class TestCirr:
                     sims_q2t[pairid2index[pair_id], tarid2index[que_id]] = -100
             sims_q2t = sims_q2t.cpu().numpy()
 
-            print(eval_recall(sims_q2t))
+            # print(eval_recall(sims_q2t))
 
             total_time = time.time() - start_time
             total_time_str = str(datetime.timedelta(seconds=int(total_time)))

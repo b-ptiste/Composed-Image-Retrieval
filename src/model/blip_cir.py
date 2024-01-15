@@ -40,11 +40,13 @@ class BLIPCir(nn.Module):
         med_config = BertConfig.from_json_file(med_config)
         med_config.encoder_width = vision_width
         self.text_encoder = BertModel(config=med_config, add_pooling_layer=False)
+        self.text_encoder_only = BertModel(config=med_config, add_pooling_layer=False)
 
         text_width = self.text_encoder.config.hidden_size
 
         self.vision_proj = nn.Linear(vision_width, embed_dim)
         self.text_proj = nn.Linear(text_width, embed_dim)
+        self.text_only_proj = nn.Linear(embed_dim * 3, embed_dim)
 
         self.train_vit = train_vit
         if not self.train_vit:
@@ -56,6 +58,46 @@ class BLIPCir(nn.Module):
             p.requires_grad = False
 
         self.temp = 0.07
+        # own model
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim * 3, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 3),
+            nn.Softmax(dim=1),
+        )
+        self.training_type = "text_embds_outside"
+
+    # own function
+    def freeze(self, epoch):
+        if epoch == 1:
+            print("We don't freeze :")
+            for name, param in self.named_parameters():
+                if (
+                    "mlp" in name or "text_encoder_only" in name
+                ) and "visual_encoder" not in name:
+                    print(name, end=" ")
+                    pass
+                else:
+                    param.requires_grad = False
+        if epoch == 2:
+            print("We don't freeze :")
+            for name, param in self.named_parameters():
+                if "mlp" in name and "visual_encoder" not in name:
+                    print(name, end=" ")
+                    pass
+                else:
+                    param.requires_grad = False
+
+        print("\n\nNumber of Trainable parameters")
+        t_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(t_params)
+        print("Ratio trainable / non trainable")
+        n_t_params = sum(p.numel() for p in self.parameters())
+        print(t_params / n_t_params)
 
     def forward(self, batch, fabric):
         ref_img, tar_feat, caption, _ = batch
@@ -86,15 +128,46 @@ class BLIPCir(nn.Module):
         # Shift encoder
         encoder_input_ids = text.input_ids.clone()
         encoder_input_ids[:, 0] = self.tokenizer.enc_token_id
-        query_embs = self.text_encoder(
+        query_embs, text_feat = self.text_encoder(
             encoder_input_ids,
             attention_mask=text.attention_mask,
             encoder_hidden_states=ref_img_embs,
             encoder_attention_mask=ref_img_atts,
             return_dict=True,
         )
+
+        if self.training_type == "text_embds_outside":
+            encoder_input_ids = text.input_ids.clone()
+            text_feat = self.text_encoder_only(
+                encoder_input_ids,
+                attention_mask=text.attention_mask,
+                return_dict=True,
+                mode="text",
+            )
+
+            text_feat = text_feat.last_hidden_state[:, 0, :]
+            text_feat = F.normalize(self.text_proj(text_feat), dim=-1)
+        if self.training_type == "text_embds_inside":
+            text_feat = F.normalize(self.text_proj(text_feat.mean(dim=1)), dim=-1)
+        # print(text_embs.shape)
         query_feat = query_embs.last_hidden_state[:, 0, :]
         query_feat = F.normalize(self.text_proj(query_feat), dim=-1)
+        img_feat_2d = F.normalize(self.vision_proj(ref_img_embs.mean(dim=1)), dim=-1)
+        # print(img_feat_2d.shape)
+
+        concatenated_feats = torch.cat(
+            (query_feat.unsqueeze(1), img_feat_2d.unsqueeze(1), text_feat.unsqueeze(1)),
+            dim=1,
+        )
+        combined_query_feat = concatenated_feats.view(concatenated_feats.size(0), -1)
+        # print(query_feat.shape)
+        # Get weights from the MLP
+        weights = self.mlp(combined_query_feat)
+        query_feat = (
+            weights[:, 0].unsqueeze(1) * query_feat
+            + weights[:, 1].unsqueeze(1) * img_feat_2d
+            + weights[:, 2].unsqueeze(1) * text_feat
+        )
 
         if fabric.world_size > 1:
             # d: devices, b: batch size, e: embedding dim
