@@ -2,6 +2,9 @@
 * CALLARD Baptiste (MVA)
 * ZHENG Steven (MVA)
 
+# Acknowledgement and credit
+We would like to thank Lucas Ventura for his help with this project. In addition, our github is a clone of its project (see. https://imagine.enpc.fr/~ventural/covr/).
+
 # Project
 
 We carried out this project as part of the Object recognition and computer vision 2023 course at ENS Ulm during our semester in the MVA master's programme.
@@ -39,7 +42,3 @@ We propose $\beta$-Hard/Filtering Sampling ( $\beta$ HN-FS) which allows to cont
 
 <img src="https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/e83c10c8-1746-4190-b157-132c92dbfbb6" width="300" alt="table_sampler">
 
-
-
-# Acknowledgement and credit
-We would like to thank Lucas Ventura for his help with this project. In addition, our github is a clone of its project (see. https://imagine.enpc.fr/~ventural/covr/).
