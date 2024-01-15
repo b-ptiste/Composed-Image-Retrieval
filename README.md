@@ -21,7 +21,7 @@ Our different experiments could be fined of 3 differents branches on this repo :
 
 ## Installation
 
-Detail for dependency and data can be found in the original repo : https://github.com/lucas-ventura/CoVR/
+Details for dependency and data can be found in the original repo : https://github.com/lucas-ventura/CoVR/
 
 ## Some nice results 
 
