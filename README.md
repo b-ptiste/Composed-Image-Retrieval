@@ -33,7 +33,7 @@ Our first strategy is Hard Negative Sampling ($\textit{HNS}$). The idea is to ha
 
 We propose $\beta$-Hard/Filtering Sampling ( $\beta$ HN-FS) which allows to control the part $\beta$ of the batches with which the $\textit{HNS}$ strategy is used $\beta .\textit{FS} + (1- \beta) . \textit{HNS}$. We have noticed that the larger $\beta$ is, the better the model is in general (ie for $Recall$@k for high K). On the contrary, when $\beta$ decreases slightly then the $Recall$@k for small K are better to the detriment of the large K. When $\beta$ tends towards 0 then the performances degrade. 
 
-<img src="[https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/a8548d31-4e09-4b9f-aaa0-dd2afee3d71d](https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/3b4b48ec-7858-408d-920d-3198bcf8da65)" width="300" alt="table_sampler">
+<img src="https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/e83c10c8-1746-4190-b157-132c92dbfbb6" width="300" alt="table_sampler">
 
 
 
