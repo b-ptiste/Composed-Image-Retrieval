@@ -104,7 +104,7 @@ class TestCirr:
             sims_q2t = sims_q2t.cpu().numpy()
 
             print(eval_recall(sims_q2t))
-            
+
             total_time = time.time() - start_time
             total_time_str = str(datetime.timedelta(seconds=int(total_time)))
             print("Evaluation time {}".format(total_time_str))
