@@ -25,7 +25,7 @@ Our different experiments could be fined of 3 differents branch on this repo :
 
 We can see that the model uses more the multimodal feature rather than image or text. In addition, we also observe better results when the model uses more the image features than text features. This corroborates results from the original papers.
 
-![Attention_2](https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/8b3b0d36-a586-4d23-955e-2a38655807c8)
+<img src="https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/8b3b0d36-a586-4d23-955e-2a38655807c8" width="300" alt="table_sampler">
 
 ### Sampler Experiments
 
@@ -33,7 +33,8 @@ Our first strategy is Hard Negative Sampling ($\textit{HNS}$). The idea is to ha
 
 We propose $\beta$-Hard/Filtering Sampling ( $\beta$ HN-FS) which allows to control the part $\beta$ of the batches with which the $\textit{HNS}$ strategy is used $\beta .\textit{FS} + (1- \beta) . \textit{HNS}$. We have noticed that the larger $\beta$ is, the better the model is in general (ie for $Recall$@k for high K). On the contrary, when $\beta$ decreases slightly then the $Recall$@k for small K are better to the detriment of the large K. When $\beta$ tends towards 0 then the performances degrade. 
 
-![table_sampler](https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/a8548d31-4e09-4b9f-aaa0-dd2afee3d71d)
+<img src="https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/a8548d31-4e09-4b9f-aaa0-dd2afee3d71d" width="300" alt="table_sampler">
+
 
 
 # Acknowledgement and credit
