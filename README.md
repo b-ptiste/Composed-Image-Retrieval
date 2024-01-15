@@ -11,8 +11,6 @@ We carried out this project as part of the Object recognition and computer visio
 
 You can read our report on the 3 double-column pages in our GitHub.
 
-## Abstract : 
-
 The paper ”Learning Composed Video Retrieval from Web Video Captions” introduces the Composed Video Retrieval (CoVR) task, an advancement of Composed Image Retrieval (CoIR), integrating text and video queries for enhanced video database retrieval. Our aim is to provide a comprehensive analysis of the solutions proposed in the paper from a theoretical and practical point of view, in particular by reproducing their experiments. We also pro- pose to go further by studying explainability using attention mechanisms to understand model predictions. We study the sampling process with three new approaches, and innovate by replacing the original BLIP architecture with the more advanced BLIP-2. As a result, we have obtained a slight improvement compared with existing methods.
 
 ## Code : 
