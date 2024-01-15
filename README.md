@@ -14,7 +14,7 @@ The paper ”Learning Composed Video Retrieval from Web Video Captions” introd
 
 ## Code : 
 
-Our different experiments could be fined of 3 differents branch on this repo : 
+Our different experiments could be fined of 3 differents branches on this repo : 
 * sampler_exp
 * attention_exp
 * ...
@@ -23,7 +23,7 @@ Our different experiments could be fined of 3 differents branch on this repo :
 
 ### Attention Experiments
 
-We can see that the model uses more the multimodal feature rather than image or text. In addition, we also observe better results when the model uses more the image features than text features. This corroborates results from the original papers.
+We can see that the model uses more the multimodal features rather than image or text features. In addition, we also observe better results when the model uses more the image features than text features. This corroborates results from the original papers.
 
 <img src="https://github.com/b-ptiste/Composed-Image-Retrieval/assets/75781257/8b3b0d36-a586-4d23-955e-2a38655807c8" width="300" alt="table_sampler">
 
