@@ -5,7 +5,7 @@ import einops
 import numpy as np
 import torch
 import torch.nn.functional as F
-
+import torchvision.transforms as transforms
 
 @torch.no_grad()
 def evaluate(model, data_loader, fabric):
@@ -25,31 +25,47 @@ def evaluate(model, data_loader, fabric):
 
         device = ref_img.device
 
-        ref_img_embs = model.visual_encoder(ref_img)
-        ref_img_atts = torch.ones(ref_img_embs.size()[:-1], dtype=torch.long).to(device)
+        # Define the resize transform
+        resize_transform = transforms.Resize((364, 364))
 
-        text = model.tokenizer(
-            caption,
-            padding="longest",
-            truncation=True,
-            max_length=64,
-            return_tensors="pt",
-        ).to(device)
-
-        # Shift encoder
-        encoder_input_ids = text.input_ids.clone()
-        encoder_input_ids[:, 0] = model.tokenizer.enc_token_id
-        query_embs = model.text_encoder(
-            encoder_input_ids,
-            attention_mask=text.attention_mask,
-            encoder_hidden_states=ref_img_embs,
-            encoder_attention_mask=ref_img_atts,
-            return_dict=True,
+        ref_img_resize = torch.stack([resize_transform(image) for image in ref_img])
+        
+        image_embeds = model.ln_vision(model.visual_encoder(ref_img_resize))
+        image_embeds = image_embeds.float()
+        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
+            device
         )
-        query_feat = query_embs.last_hidden_state[:, 0, :]
-        query_feat = F.normalize(model.text_proj(query_feat), dim=-1)
-        query_feats.append(query_feat.cpu())
 
+        text_tokens = model.tokenizer(
+              caption,
+              padding="max_length",
+              truncation=True,
+              max_length=35,
+              return_tensors="pt",
+          ).to(device)
+
+        # Image Text Matching
+        query_tokens = model.query_tokens.expand(image_embeds.shape[0], -1, -1)
+        query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(
+                ref_img.device
+            )
+            
+        attention_mask = torch.cat([query_atts, text_tokens.attention_mask], dim=1)
+
+        output_itm = model.Qformer.bert(
+                text_tokens.input_ids,
+                query_embeds=query_tokens,
+                attention_mask=attention_mask,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=image_atts,
+                return_dict=True,
+            )
+
+        query_feat = model.text_proj(output_itm.last_hidden_state[:, : query_tokens.size(1), :])
+        query_feat = torch.mean(query_feat, dim=1)
+
+
+        query_feats.append(query_feat.cpu())
         # Encode the target image
         tar_img_feats.append(tar_feat.cpu())
 
