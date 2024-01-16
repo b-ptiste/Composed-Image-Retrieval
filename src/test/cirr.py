@@ -7,9 +7,9 @@ import einops
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as transforms
 
 from src.tools.files import json_dump
-
 
 class TestCirr:
     def __init__(self):
@@ -31,31 +31,45 @@ class TestCirr:
 
             device = ref_img.device
 
-            ref_img_embs = model.visual_encoder(ref_img)
-            ref_img_atts = torch.ones(ref_img_embs.size()[:-1], dtype=torch.long).to(
+            # Define the resize transform
+            resize_transform = transforms.Resize((364, 364))
+
+            ref_img_resize = torch.stack([resize_transform(image) for image in ref_img])
+            
+            image_embeds = model.ln_vision(model.visual_encoder(ref_img_resize))
+            image_embeds = image_embeds.float()
+            image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
                 device
             )
 
-            text = model.tokenizer(
+            text_tokens = model.tokenizer(
                 caption,
-                padding="longest",
+                padding="max_length",
                 truncation=True,
-                max_length=64,
+                max_length=35,
                 return_tensors="pt",
             ).to(device)
 
-            # Shift encoder
-            encoder_input_ids = text.input_ids.clone()
-            encoder_input_ids[:, 0] = model.tokenizer.enc_token_id
-            query_embs = model.text_encoder(
-                encoder_input_ids,
-                attention_mask=text.attention_mask,
-                encoder_hidden_states=ref_img_embs,
-                encoder_attention_mask=ref_img_atts,
-                return_dict=True,
-            )
-            query_feat = query_embs.last_hidden_state[:, 0, :]
-            query_feat = F.normalize(model.text_proj(query_feat), dim=-1)
+            # Image Text Matching
+            query_tokens = model.query_tokens.expand(image_embeds.shape[0], -1, -1)
+            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(
+                    ref_img.device
+                )
+                
+            attention_mask = torch.cat([query_atts, text_tokens.attention_mask], dim=1)
+
+            output_itm = model.Qformer.bert(
+                    text_tokens.input_ids,
+                    query_embeds=query_tokens,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=image_embeds,
+                    encoder_attention_mask=image_atts,
+                    return_dict=True,
+                )
+
+            query_feat = model.text_proj(output_itm.last_hidden_state[:, : query_tokens.size(1), :])
+            query_feat = torch.mean(query_feat, dim=1)
+
             query_feats.append(query_feat.cpu())
 
             # Encode the target image
@@ -103,8 +117,6 @@ class TestCirr:
                     sims_q2t[pairid2index[pair_id], tarid2index[que_id]] = -100
             sims_q2t = sims_q2t.cpu().numpy()
 
-            print(eval_recall(sims_q2t))
-
             total_time = time.time() - start_time
             total_time_str = str(datetime.timedelta(seconds=int(total_time)))
             print("Evaluation time {}".format(total_time_str))
@@ -146,37 +158,3 @@ class TestCirr:
             print(f"Recalls saved in {Path.cwd()} as recalls_cirr.json")
 
         fabric.barrier()
-
-
-@torch.no_grad()
-def eval_recall(scores_q2t):
-    # Query->Target
-    ranks = np.zeros(scores_q2t.shape[0])
-
-    for index, score in enumerate(scores_q2t):
-        inds = np.argsort(score)[::-1]
-        match_index = np.where(inds == index)[0]
-
-        if match_index.size > 0:
-            ranks[index] = match_index[0]
-        else:
-            ranks[index] = len(score)  # Or some other default value indicating no match
-
-    # Compute metrics
-    tr1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)  # type: ignore
-    tr5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
-    tr10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
-    tr50 = 100.0 * len(np.where(ranks < 50)[0]) / len(ranks)
-
-    tr_mean3 = (tr1 + tr5 + tr10) / 3
-    tr_mean4 = (tr1 + tr5 + tr10 + tr50) / 4
-
-    eval_result = {
-        "R1": round(tr1, 2),
-        "R5": round(tr5, 2),
-        "R10": round(tr10, 2),
-        "R50": round(tr50, 2),
-        "meanR3": round(tr_mean3, 2),
-        "meanR4": round(tr_mean4, 2),
-    }
-    return eval_result
