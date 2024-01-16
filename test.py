@@ -5,7 +5,8 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from src.tools.files import json_dump
-
+import torch.multiprocessing as mp
+mp.set_start_method('spawn', force=True)
 
 @hydra.main(version_base=None, config_path="configs", config_name="test")
 def main(cfg: DictConfig):
