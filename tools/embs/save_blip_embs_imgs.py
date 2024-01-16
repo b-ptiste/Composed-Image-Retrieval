@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
+import torchvision.transforms as transforms
 
 script_path = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_path)
@@ -13,6 +14,8 @@ sys.path.append(project_root)
 
 from src.data.embs import ImageDataset
 from src.model.blip_embs import blip_embs
+from src.model.blip_cir import blip_cir
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -82,10 +85,33 @@ def main(args):
 
     for imgs, video_ids in tqdm(loader):
         imgs = imgs.to(device)
-        img_embs = model.visual_encoder(imgs)
-        img_feats = F.normalize(model.vision_proj(img_embs[:, 0, :]), dim=-1).cpu()
 
-        for img_feat, video_id in zip(img_feats, video_ids):
+        # Define the resize transform
+        resize_transform = transforms.Resize((364, 364))
+
+        # Apply the transform to each image in the batch
+        imgs = torch.stack([resize_transform(image) for image in imgs])
+
+        img_embs = model.visual_encoder(imgs)
+        img_embs = model.ln_vision(img_embs)
+        image_embeds = img_embs.float()
+        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
+            imgs.device
+        )
+        query_tokens = model.query_tokens.expand(image_embeds.shape[0], -1, -1)
+
+        query_output = model.Qformer.bert(
+            query_embeds=query_tokens,
+            encoder_hidden_states=image_embeds,
+            encoder_attention_mask=image_atts,
+            return_dict=True,
+        )
+
+        image_feats = model.vision_proj(query_output.last_hidden_state)
+        image_feats = torch.mean(image_feats, dim=1)
+
+        for img_feat, video_id in zip(image_feats, video_ids):
+            # print(img_feat.shape, video_id)
             torch.save(img_feat, args.save_dir / f"{video_id}.pth")
 
 
