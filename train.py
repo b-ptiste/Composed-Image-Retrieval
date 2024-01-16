@@ -10,7 +10,8 @@ from omegaconf import DictConfig, OmegaConf
 from src.test.utils import evaluate
 from src.tools.files import json_dump
 from src.tools.utils import calculate_model_params
-
+import torch.multiprocessing as mp
+mp.set_start_method('spawn', force=True)
 
 @hydra.main(version_base=None, config_path="configs", config_name="train")
 def main(cfg: DictConfig):
