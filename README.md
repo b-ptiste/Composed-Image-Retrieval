@@ -18,7 +18,7 @@ The paper ”Learning Composed Video Retrieval from Web Video Captions” introd
 Our different experiments could be fined of 3 differents branches on this repo : 
 * sampler_exp
 * attention_exp
-* ...
+* blip2-exp
 
 ## Installation
 
