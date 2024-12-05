@@ -3,15 +3,25 @@
 * ZHENG Steven (MVA)
 
 # Acknowledgement and credit
-We would like to thank Lucas Ventura for his help with this project. In addition, our github is a clone of its project (see. https://imagine.enpc.fr/~ventural/covr/).
+We would like to thank Lucas Ventura for his help with this project. In addition, our github is a clone of its project (see. [web page](https://imagine.enpc.fr/~ventural/covr/)).
 
 # Project
 
 We carried out this project as part of the Object recognition and computer vision 2023 course at ENS Ulm during our semester in the MVA master's programme.
 
-You can read our report on the 3 double-column pages in our GitHub.
+You can read our report : [here](https://drive.google.com/file/d/1TSedD1iCNDuQ77YY0pboVanj45ZuREN6/view).
 
-The paper ”Learning Composed Video Retrieval from Web Video Captions” introduces the Composed Video Retrieval (CoVR) task, an advancement of Composed Image Retrieval (CoIR), integrating text and video queries for enhanced video database retrieval. Our aim is to provide a comprehensive analysis of the solutions proposed in the paper from a theoretical and practical point of view, in particular by reproducing their experiments. We also pro- pose to go further by studying explainability using attention mechanisms to understand model predictions. We study the sampling process with three new approaches, and innovate by replacing the original BLIP architecture with the more advanced BLIP-2. As a result, we have obtained a slight improvement compared with existing methods.
+The paper ”Learning Composed Video Retrieval from Web Video Captions” published at AAAI'24 introduces the Composed Video Retrieval (CoVR) task, an advancement of Composed Image Retrieval (CoIR). As illustrated in the Figure bellow, given an image and a modification text, the objective is to perform video retreival in large database. 
+
+![example (1)](https://github.com/user-attachments/assets/c6552754-b051-4ebe-838e-e6a281315171)
+
+Our aim is to provide a comprehensive analysis of the solutions proposed in the paper from a theoretical and practical point of view.
+* We reproduced their experiments.
+* We proposed to go further by studying explainability using attention mechanisms to understand model predictions.
+* We studied the sampling process with three new approaches
+* We replaced the original BLIP architecture with the more advanced BLIP-2.
+
+As a result, we have obtained a slight improvement compared with the existing method with the sampling study.
 
 ## Code : 
 
@@ -19,6 +29,8 @@ Our different experiments could be fined of 3 differents branches on this repo :
 * sampler_exp
 * attention_exp
 * blip2-exp
+
+Experiments were conducted on GCP virtual machines.
 
 ## Installation
 
